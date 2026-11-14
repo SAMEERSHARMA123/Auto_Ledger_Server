@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, Schema } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 // Initialize the SDK with your API Key (from .env)
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });

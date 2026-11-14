@@ -1,4 +1,3 @@
-import { parseExpenseWithAI } from '../services/gemini.service.js';
 import Expense from '../models/Expense.js';
 import { parseExpenseWithAI, generateFinancialAdvice } from '../services/gemini.service.js';
 

@@ -8,7 +8,7 @@ router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.post('/logout', logoutUser);
 
-router.get('/refresh', refreshAccessToken); 
+router.post('/refresh', refreshAccessToken); 
 router.post('/google', googleLogin);
 
 router.get('/profile', protectRoute, getUserProfile);

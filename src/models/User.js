@@ -2,16 +2,14 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema({
-    name:{
-        type:String,
-        required:true
-
+    name: {
+        type: String,
+        required: true
     },
     email: {
         type: String,
         required: true,
         unique: true,
-        index: true,
         trim: true,
         lowercase: true
     },
@@ -21,13 +19,18 @@ const userSchema = new mongoose.Schema({
     },
     googleId: {
         type: String,
+        default: null
+    },
+    avatar: {
+        type: String,
+        default: ""
     }
 }, { timestamps: true });
 
 // Sirf async function use karein, next() parameter hata dein
 userSchema.pre('save', async function() {
     // Agar password naya nahi hai ya change nahi hua hai, toh execution wahin rok dein
-    if (!this.isModified('password')) return;
+    if (!this.isModified('password') || !this.password) return;
     
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);

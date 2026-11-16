@@ -6,7 +6,7 @@ const expenseSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true,
-        index: true // Index for faster queries
+        index: true 
     },
     amount: {
         type: Number,
@@ -35,11 +35,11 @@ const expenseSchema = new mongoose.Schema({
         trim: true
     },
     receiptUrl: {
-        type: String // Gemini OCR receipt scanning ke future use ke liye
+        type: String
     },
     isDebtRelated: {
         type: Boolean,
-        default: false // Agar dosto ke beech ka udhaar hai toh true hoga
+        default: false 
     }
 }, { timestamps: true });
 

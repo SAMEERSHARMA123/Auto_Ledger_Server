@@ -13,10 +13,12 @@ export const generateRefreshToken = (userId) => {
 };
 
 export const setAuthCookies = (res, accessToken, refreshToken) => {
+    const isProduction = process.env.NODE_ENV === 'production';
+
     const baseOptions = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: isProduction, // Production (HTTPS) par true, Localhost par false
+        sameSite: isProduction ? 'none' : 'lax', // Live cross-domain ke liye 'none', Localhost ke liye 'lax'
         path: '/',
     };
 
@@ -36,10 +38,12 @@ export const setAuthCookies = (res, accessToken, refreshToken) => {
 };
 
 export const clearAuthCookies = (res) => {
+    const isProduction = process.env.NODE_ENV === 'production';
+
     const clearOptions = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
         path: '/',
         expires: new Date(0),
     };

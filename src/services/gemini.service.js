@@ -24,7 +24,7 @@ export const parseAudioExpenses = async (audioBase64, mimeType = "audio/webm") =
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash-lite", 
     contents: [
       { inlineData: { data: audioBase64, mimeType } },
       { text: prompt },

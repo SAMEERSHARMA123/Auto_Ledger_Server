@@ -70,3 +70,80 @@ export const getDashboardSummary = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+export const getLedgerSummary = async (req, res) => {
+  try {
+    const { search, paymentMethod, category, minAmount, maxAmount, startDate, endDate } = req.query;
+
+    // 1. Dynamic Match Filter
+    const matchStage = {
+      userId: new mongoose.Types.ObjectId(req.user.id),
+      type: { $regex: /^expense$/i },
+    };
+
+    if (search?.trim()) {
+      matchStage.$or = [
+        { notes: { $regex: search.trim(), $options: 'i' } },
+        { category: { $regex: search.trim(), $options: 'i' } },
+      ];
+    }
+
+    if (paymentMethod && paymentMethod !== 'ALL') {
+      matchStage.paymentMethod = paymentMethod.toUpperCase();
+    }
+
+    if (category && category !== 'ALL') {
+      matchStage.category = category.toUpperCase();
+    }
+
+    if (minAmount || maxAmount) {
+      matchStage.amount = {};
+      if (minAmount) matchStage.amount.$gte = Number(minAmount);
+      if (maxAmount) matchStage.amount.$lte = Number(maxAmount);
+    }
+
+    if (startDate || endDate) {
+      matchStage.date = {};
+      if (startDate) matchStage.date.$gte = new Date(startDate);
+      if (endDate) matchStage.date.$lte = new Date(endDate);
+    }
+
+    // 2. Single-Query Aggregation using $facet
+    const [result] = await Expense.aggregate([
+      { $match: matchStage },
+      {
+        $facet: {
+          stats: [
+            {
+              $group: {
+                _id: null,
+                filteredTotal: { $sum: '$amount' },
+                itemCount: { $sum: 1 },
+                averageSpend: { $avg: '$amount' },
+              },
+            },
+          ],
+          highest: [
+            { $sort: { amount: -1 } },
+            { $limit: 1 },
+            { $project: { _id: 0, amount: 1, category: 1 } },
+          ],
+        },
+      },
+    ]);
+
+    const stats = result?.stats[0] || { filteredTotal: 0, itemCount: 0, averageSpend: 0 };
+    const highest = result?.highest[0] || { amount: 0, category: 'NONE' };
+
+    res.status(200).json({
+      summary: {
+        filteredTotal: stats.filteredTotal,
+        itemCount: stats.itemCount,
+        highestExpense: highest,
+        averageSpend: Number(stats.averageSpend.toFixed(2)),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

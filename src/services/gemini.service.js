@@ -2,10 +2,10 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export const parseSpokenExpenses = async (text) => {
+export const parseAudioExpenses = async (audioBase64, mimeType = "audio/webm") => {
   const prompt = `
-    Extract one or multiple expenses from this spoken English/Hinglish text: "${text}"
-    Return a strict JSON array of objects matching this exact schema:
+    Listen to this English/Hinglish audio and extract all expenses mentioned.
+    Return a strict JSON array matching this exact schema:
     [
       {
         "amount": Number,
@@ -17,15 +17,18 @@ export const parseSpokenExpenses = async (text) => {
       }
     ]
     Rules:
-    - Default paymentMethod to "UPI" if not mentioned.
-    - Default category to "OTHER" if unclear.
+    - If the audio is unclear, silent, or has NO valid numeric amount, return [].
+    - Default paymentMethod to "UPI" and category to "OTHER" if not mentioned.
     - Keep notes short and clean (e.g., "Chai samosa", "Petrol").
-    - Set isDebtRelated to true only if words like udhaar, debt, split, or borrowed are mentioned.
+    - Set isDebtRelated to true only if words like udhaar, debt, split, or borrowed are spoken.
   `;
 
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
-    contents: prompt,
+    contents: [
+      { inlineData: { data: audioBase64, mimeType } },
+      { text: prompt },
+    ],
     config: {
       responseMimeType: "application/json",
     },

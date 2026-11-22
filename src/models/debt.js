@@ -1,48 +1,45 @@
 import mongoose from 'mongoose';
 
-const settlementSchema = new mongoose.Schema({
-    amount: { type: Number, required: true },
+const debtEntrySchema = new mongoose.Schema(
+  {
+    note: { type: String, trim: true, default: 'Udhaar Entry' },
+    amount: { type: Number, required: true, min: 1 },
+    remainingAmount: { type: Number, required: true, min: 0 },
     date: { type: Date, default: Date.now },
-    notes: { type: String }
-});
+    dueDate: { type: Date },
+    status: {
+      type: String,
+      enum: ['ACTIVE', 'SETTLED'],
+      default: 'ACTIVE',
+    },
+    settledAt: { type: Date },
+  },
+  { _id: true, timestamps: true }
+);
 
-const debtSchema = new mongoose.Schema({
+const debtAccountSchema = new mongoose.Schema(
+  {
     userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true,
-        index: true
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
     },
     personName: {
-        type: String,
-        required: true,
-        trim: true
+      type: String,
+      required: true,
+      trim: true,
     },
     type: {
-        type: String,
-        enum: ['LENT', 'BORROWED'], // LENT = Aapne diye, BORROWED = Aapne liye
-        required: true
+      type: String,
+      enum: ['LENT', 'BORROWED'], // LENT = To Receive, BORROWED = To Pay
+      required: true,
     },
-    principalAmount: {
-        type: Number,
-        required: true
-    },
-    remainingAmount: {
-        type: Number,
-        required: true
-    },
-    status: {
-        type: String,
-        enum: ['PENDING', 'PARTIALLY_PAID', 'SETTLED'],
-        default: 'PENDING'
-    },
-    dueDate: {
-        type: Date
-    },
-    settlements: [settlementSchema], // History of partial payments
-    notes: {
-        type: String
-    }
-}, { timestamps: true });
+    entries: [debtEntrySchema],
+  },
+  { timestamps: true }
+);
 
-export default mongoose.model('Debt', debtSchema);
+debtAccountSchema.index({ userId: 1, personName: 1, type: 1 });
+
+export default mongoose.model('DebtAccount', debtAccountSchema);

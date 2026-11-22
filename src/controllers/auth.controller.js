@@ -8,6 +8,7 @@ import {
     setAuthCookies,
     clearAuthCookies
 } from '../utils/generateToken.js';
+import { uploadAvatarToCloudinary } from '../services/cloudinary.service.js';   
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -92,8 +93,13 @@ export const refreshAccessToken = async (req, res) => {
 
 export const getUserProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('-password').lean();
-        if (!user) return res.status(404).json({ message: 'User not found' });
+        const user = await User.findById(req.user.id)
+            .select('-password -tokenId -__v')
+            .lean();
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
 
         res.status(200).json(user);
     } catch (error) {
@@ -102,51 +108,111 @@ export const getUserProfile = async (req, res) => {
 };
 
 export const googleLogin = async (req, res) => {
-    try {
-        const { idToken } = req.body;
-        if (!idToken) return res.status(400).json({ message: 'Google ID Token is required' });
-
-        // 1. Google Token वेरिफ़ाई करें
-        const ticket = await client.verifyIdToken({
-            idToken,
-            audience: process.env.GOOGLE_CLIENT_ID
-        });
-        const { email, name, picture, sub: googleId } = ticket.getPayload();
-
-        // 2. ईमेल से यूज़र ढूँढें
-        let user = await User.findOne({ email });
-
-        if (!user) {
-            // नया यूज़र: ऑटो-रजिस्टर करें (201 Status के साथ)
-            user = await User.create({
-                name: name || email.split('@')[0],
-                email,
-                googleId,
-                avatar: picture // अगर मॉडल में avatar फ़ील्ड है तो सेव हो जाएगी
-            });
-        } else if (!user.googleId) {
-            // पुराना ईमेल यूज़र: पहली बार Google से आया है तो googleId लिंक करें
-            user.googleId = googleId;
-            if (!user.avatar && picture) user.avatar = picture;
-            await user.save();
-        }
-
-        // 3. टोकन जनरेट करें और HTTP-Only कुकी सेट करें
-        const accessToken = generateAccessToken(user._id);
-        const refreshToken = generateRefreshToken(user._id);
-        setAuthCookies(res, accessToken, refreshToken);
-
-        res.status(200).json({
-            message: 'Google authentication successful',
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                avatar: user.avatar
-            }
-        });
-    } catch (error) {
-        console.error('Google Auth Error:', error);
-        res.status(401).json({ message: error.message || 'Google authentication failed' });
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ message: 'Google ID Token is required' });
     }
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const { email, name, picture, sub: googleId } = ticket.getPayload();
+    const cleanName = (name && name.trim()) || email.split('@')[0];
+
+    let user = await User.findOne({ email });
+    let isNewUser = false;
+
+    if (!user) {
+      isNewUser = true;
+      const cloudinaryAvatar = picture
+        ? (await uploadAvatarToCloudinary(picture, googleId)) || picture
+        : undefined;
+
+      user = await User.create({
+        name: cleanName,
+        email,
+        googleId,
+        avatar: cloudinaryAvatar,
+      });
+    } else {
+      let updated = false;
+
+      if (!user.googleId) {
+        user.googleId = googleId;
+        updated = true;
+      }
+      if (!user.name && cleanName) {
+        user.name = cleanName;
+        updated = true;
+      }
+      if (!user.avatar && picture) {
+        const cloudinaryAvatar =
+          (await uploadAvatarToCloudinary(picture, user._id.toString())) || picture;
+        user.avatar = cloudinaryAvatar;
+        updated = true;
+      }
+
+      if (updated) {
+        await user.save();
+      }
+    }
+
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    setAuthCookies(res, accessToken, refreshToken);
+
+    res.status(isNewUser ? 201 : 200).json({
+      message: 'Google authentication successful',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+      },
+    });
+  } catch (error) {
+    console.error('Google Auth Error:', error);
+    res.status(401).json({ message: error.message || 'Google authentication failed' });
+  }
+};
+export const updateUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const { name, avatar, image } = req.body;
+
+    if (typeof name === 'string' && name.trim()) {
+      user.name = name.trim();
+    }
+
+    const incomingImage = req.file?.buffer || req.file?.path || avatar || image;
+
+    if (incomingImage) {
+      const uploadedUrl = await uploadAvatarToCloudinary(incomingImage, user._id.toString());
+      if (!uploadedUrl) {
+        return res.status(500).json({ message: 'Failed to upload profile image' });
+      }
+      user.avatar = uploadedUrl;
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };

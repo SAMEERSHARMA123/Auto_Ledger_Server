@@ -1,6 +1,6 @@
 import express from 'express';
 import { protectRoute } from '../middleware/auth.middleware.js';
-import { addExpense, getPaginatedExpenses, deleteExpense } from '../controllers/expense.controller.js';
+import { addExpense, deleteExpense, getExpenses } from '../controllers/expense.controller.js';
 
 const router = express.Router();
 
@@ -8,7 +8,7 @@ const router = express.Router();
 router.use(protectRoute);
 
 router.post('/', addExpense);
-router.get('/', getPaginatedExpenses);
+router.get('/', getExpenses);
 router.delete('/:id', deleteExpense);
 
 export default router;

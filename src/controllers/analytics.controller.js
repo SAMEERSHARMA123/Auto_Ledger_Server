@@ -1,8 +1,11 @@
 import Expense from '../models/Expense.js';
 import mongoose from 'mongoose';
 
+import DebtAccount from '../models/debt.js';
+
 export const getDashboardSummary = async (req, res) => {
     try {
+        const userId = new mongoose.Types.ObjectId(req.user.id);
         const date = new Date();
         const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
         const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -10,13 +13,13 @@ export const getDashboardSummary = async (req, res) => {
         const pipeline = [
             {
                 $match: {
-                    userId: new mongoose.Types.ObjectId(req.user.id),
+                    userId,
                     date: { $gte: firstDay, $lte: lastDay }
                 }
             },
             {
                 $facet: {
-                    // 1. Total Income, Total Expense & Active Debts
+                    // 1. Total Income & Total Expense
                     totals: [
                         {
                             $group: {
@@ -29,11 +32,6 @@ export const getDashboardSummary = async (req, res) => {
                                 totalIncome: {
                                     $sum: {
                                         $cond: [{ $eq: [{ $toUpper: '$type' }, 'INCOME'] }, '$amount', 0]
-                                    }
-                                },
-                                activeDebts: {
-                                    $sum: {
-                                        $cond: [{ $eq: ['$isDebtRelated', true] }, '$amount', 0]
                                     }
                                 }
                             }
@@ -54,15 +52,27 @@ export const getDashboardSummary = async (req, res) => {
             }
         ];
 
-        const result = await Expense.aggregate(pipeline);
-        const totalsData = result[0].totals[0] || { totalExpense: 0, totalIncome: 0, activeDebts: 0 };
+        const [result, debtAccounts] = await Promise.all([
+            Expense.aggregate(pipeline),
+            DebtAccount.find({ userId }).lean()
+        ]);
+
+        const totalsData = result[0]?.totals?.[0] || { totalExpense: 0, totalIncome: 0 };
+        const activeDebts = debtAccounts.reduce(
+            (sum, acc) =>
+                sum +
+                acc.entries
+                    .filter((e) => e.status === 'ACTIVE' && e.remainingAmount > 0)
+                    .reduce((accSum, e) => accSum + e.remainingAmount, 0),
+            0
+        );
 
         const summary = {
             netBalance: totalsData.totalIncome - totalsData.totalExpense,
             monthlyInflow: totalsData.totalIncome,
             monthlyOutflow: totalsData.totalExpense,
-            activeDebts: totalsData.activeDebts,
-            categoryBreakdown: result[0].categoryBreakdown
+            activeDebts,
+            categoryBreakdown: result[0]?.categoryBreakdown || []
         };
 
         res.status(200).json({ summary });
@@ -70,7 +80,6 @@ export const getDashboardSummary = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
-
 export const getLedgerSummary = async (req, res) => {
   try {
     const { search, paymentMethod, category, minAmount, maxAmount, startDate, endDate } = req.query;
@@ -141,6 +150,147 @@ export const getLedgerSummary = async (req, res) => {
         itemCount: stats.itemCount,
         highestExpense: highest,
         averageSpend: Number(stats.averageSpend.toFixed(2)),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};  
+export const getDashboardInsights = async (req, res) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.user.id);
+    const now = new Date();
+
+    // Current month bounds
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const daysInMonth = endOfMonth.getDate();
+    const remainingDays = Math.max(1, daysInMonth - now.getDate() + 1);
+
+    // Last 7 days start (6 days ago at 00:00)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(now.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const [result] = await Expense.aggregate([
+      { $match: { userId } },
+      {
+        $facet: {
+          // 1. Monthly Inflow & Outflow (for Burn Rate)
+          monthlyTotals: [
+            { $match: { date: { $gte: startOfMonth, $lte: endOfMonth } } },
+            {
+              $group: {
+                _id: { $toUpper: "$type" },
+                total: { $sum: "$amount" },
+              },
+            },
+          ],
+
+          // 2. Category Breakdown (for Top Drain & Category Split)
+          categoryBreakdown: [
+            {
+              $match: {
+                type: { $regex: /^expense$/i },
+                date: { $gte: startOfMonth, $lte: endOfMonth },
+              },
+            },
+            {
+              $group: {
+                _id: "$category",
+                amount: { $sum: "$amount" },
+              },
+            },
+            { $sort: { amount: -1 } },
+          ],
+
+          // 3. Pending Debts Count
+          pendingDebts: [
+            { $match: { isDebtRelated: true } },
+            { $count: "count" },
+          ],
+
+          // 4. Last 7 Days Daily Spend (IST timezone)
+          last7Days: [
+            {
+              $match: {
+                type: { $regex: /^expense$/i },
+                date: { $gte: sevenDaysAgo, $lte: now },
+              },
+            },
+            {
+              $group: {
+                _id: {
+                  $dateToString: {
+                    format: "%Y-%m-%d",
+                    date: "$date",
+                    timezone: "Asia/Kolkata",
+                  },
+                },
+                amount: { $sum: "$amount" },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    // --- Process Burn Rate ---
+    const monthlyInflow = result.monthlyTotals.find((t) => t._id === "INCOME")?.total || 0;
+    const monthlyOutflow = result.monthlyTotals.find((t) => t._id === "EXPENSE")?.total || 0;
+    const remainingBudget = Math.max(0, monthlyInflow - monthlyOutflow);
+
+    const burnRate = {
+      dailySafeLimit: Math.round(remainingBudget / remainingDays),
+      monthlyBurnPercent:
+        monthlyInflow > 0
+          ? Number(Math.min(100, (monthlyOutflow / monthlyInflow) * 100).toFixed(1))
+          : 0,
+    };
+
+    // --- Process Top Drain & Top 3 Category Split ---
+    const categories = result.categoryBreakdown || [];
+    const totalCategorySpend = categories.reduce((sum, c) => sum + c.amount, 0);
+
+    const categorySplit = categories.slice(0, 3).map((c) => ({
+      category: c._id,
+      amount: c.amount,
+      percentage:
+        totalCategorySpend > 0 ? Math.round((c.amount / totalCategorySpend) * 100) : 0,
+    }));
+
+    const topDrain = categorySplit[0] || { category: "NONE", amount: 0, percentage: 0 };
+    const pendingDebtsCount = result.pendingDebts[0]?.count || 0;
+
+    // --- Process 7-Day Pulse (fill missing days with 0 + flag highest day) ---
+    const dayMap = new Map(result.last7Days.map((d) => [d._id, d.amount]));
+    const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+    const rawPulse = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(sevenDaysAgo);
+      d.setDate(sevenDaysAgo.getDate() + i);
+      const dateKey = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
+      return {
+        date: dateKey,
+        day: dayNames[d.getDay()],
+        amount: dayMap.get(dateKey) || 0,
+      };
+    });
+
+    const maxDaySpend = Math.max(...rawPulse.map((d) => d.amount));
+
+    const sevenDayPulse = rawPulse.map((item) => ({
+      ...item,
+      isHighest: maxDaySpend > 0 && item.amount === maxDaySpend,
+    }));
+
+    res.status(200).json({
+      insights: {
+        burnRate,
+        topDrain,
+        pendingDebtsCount,
+        sevenDayPulse,
+        categorySplit,
       },
     });
   } catch (error) {

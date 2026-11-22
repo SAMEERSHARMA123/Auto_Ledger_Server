@@ -79,6 +79,82 @@ export const getPaginatedExpenses = async (req, res) => {
     }
 };
 
+export const getExpenses = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      paymentMethod,
+      category,
+      minAmount,
+      maxAmount,
+      startDate,
+      endDate,
+      proofStatus,
+    } = req.query;
+
+    const conditions = [{ userId: req.user.id }];
+
+    if (search && search.trim()) {
+      const regex = { $regex: search.trim(), $options: 'i' };
+      conditions.push({ $or: [{ notes: regex }, { category: regex }] });
+    }
+
+    if (paymentMethod && paymentMethod !== 'ALL') {
+      conditions.push({ paymentMethod: paymentMethod.toUpperCase() });
+    }
+
+    if (category && category !== 'ALL') {
+      conditions.push({ category: category.toUpperCase() });
+    }
+
+    if (minAmount !== undefined && minAmount !== '') {
+      conditions.push({ amount: { $gte: Number(minAmount) } });
+    }
+
+    if (maxAmount !== undefined && maxAmount !== '') {
+      conditions.push({ amount: { $lte: Number(maxAmount) } });
+    }
+
+    if (startDate) {
+      conditions.push({ date: { $gte: new Date(startDate) } });
+    }
+
+    if (endDate) {
+      conditions.push({ date: { $lte: new Date(endDate) } });
+    }
+
+    if (proofStatus === 'PROOF') {
+      conditions.push({ receiptUrl: { $exists: true, $nin: ['', null] } });
+    } else if (proofStatus === 'NO_PROOF') {
+      conditions.push({
+        $or: [{ receiptUrl: { $exists: false } }, { receiptUrl: '' }, { receiptUrl: null }],
+      });
+    }
+
+    const filter = { $and: conditions };
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [expenses, total] = await Promise.all([
+      Expense.find(filter).sort({ date: -1, createdAt: -1 }).skip(skip).limit(Number(limit)),
+      Expense.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
+      data: expenses,
+      pagination: {
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // 3. Delete Expense
 export const deleteExpense = async (req, res) => {
     try {

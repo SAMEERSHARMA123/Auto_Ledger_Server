@@ -1,13 +1,19 @@
 import express from 'express';
 import { protectRoute } from '../middleware/auth.middleware.js';
-import { addDebt, addSettlement, getDebtSummary } from '../controllers/debt.controller.js';
+import {
+  getDebtsOverview,
+  addDebtRecord,
+  partialSettleEntry,
+  settleFullAccount,
+} from '../controllers/debt.controller.js';
 
 const router = express.Router();
 
-router.use(protectRoute); // Require token for all debt routes
+router.use(protectRoute);
 
-router.post('/', addDebt);
-router.post('/:id/settle', addSettlement);
-router.get('/summary', getDebtSummary);
+router.get('/', getDebtsOverview);
+router.post('/', addDebtRecord);
+router.patch('/:accountId/entries/:entryId/partial', partialSettleEntry);
+router.patch('/:accountId/settle', settleFullAccount);
 
 export default router;

@@ -4,9 +4,9 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.routes.js'
 import expenseRoutes from './routes/expense.routes.js'
-import debtRoutes from './routes/debt.routes.js'; // Nayi line add karein
 import aiRoutes from './routes/ai.routes.js'; // Add this
 import analyticsRoutes from './routes/analytics.routes.js';
+import debtRoutes from './routes/debt.routes.js';
 
 const app = express();
 
@@ -52,9 +52,9 @@ app.get('/health',(req,res)=>{
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/expenses', expenseRoutes); // Add this line
-app.use('/api/debts', debtRoutes); // Nayi line add karein
-app.use('/api/ai', aiRoutes); // Add this
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/debts', debtRoutes); 
+app.use('/api/ai', aiRoutes); 
 app.use('/api/analytics', analyticsRoutes);
 
 export default app;

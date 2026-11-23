@@ -1,4 +1,5 @@
 import Expense from '../models/Expense.js';
+import DebtAccount from '../models/debt.js';
 import mongoose from 'mongoose';
 
 // 1. Add New Expense
@@ -155,7 +156,23 @@ export const getExpenses = async (req, res) => {
   }
 };
 
-// 3. Delete Expense
+// 3. Reset All Expenses & Debts for Current User
+export const resetAllData = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await Promise.all([
+      Expense.deleteMany({ userId }),
+      DebtAccount.deleteMany({ userId }),
+    ]);
+
+    res.status(200).json({ message: 'All expenses and debts reset successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// 4. Delete Expense
 export const deleteExpense = async (req, res) => {
     try {
         const { id } = req.params;

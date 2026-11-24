@@ -5,6 +5,7 @@ import {
   deleteExpense,
   getExpenses,
   resetAllData,
+  updateExpense,
 } from '../controllers/expense.controller.js';
 
 const router = express.Router();
@@ -14,6 +15,8 @@ router.use(protectRoute);
 
 router.post('/', addExpense);
 router.get('/', getExpenses);
+router.put('/:id', protectRoute, updateExpense);
+router.patch('/:id', protectRoute, updateExpense);
 router.delete('/reset', resetAllData);
 router.delete('/:id', deleteExpense);
 

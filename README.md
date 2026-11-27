@@ -149,3 +149,5 @@ Deployed on Render. Add every variable from the `.env` section above in the serv
 ## Author
 
 **Sameer Sharma** — Jaipur, India
+
+© 2026 Sameer Sharma. See LICENSE for terms.
